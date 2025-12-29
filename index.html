@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Felo Agent プロンプト生成ツール</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <header class="header">
+            <h1>📚 Felo Agent プロンプト生成ツール</h1>
+            <p class="subtitle">PubMed論文 → EBMプロンプト → Felo執筆</p>
+        </header>
+
+        <main class="main-content">
+            <!-- Search Section -->
+            <section class="search-section">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="論文タイトル、キーワード、PMIDで検索..." autocomplete="off">
+                    <button id="searchBtn" class="btn-primary">
+                        <span class="btn-icon">🔍</span>
+                        検索
+                    </button>
+                </div>
+                <div class="search-options">
+                    <label>
+                        <input type="number" id="limitInput" value="10" min="1" max="50">
+                        件表示
+                    </label>
+                </div>
+            </section>
+
+            <!-- Loading Indicator -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Semantic Scholar APIから検索中...</p>
+            </div>
+
+            <!-- Results Section -->
+            <section id="resultsSection" class="results-section hidden">
+                <h2>検索結果 <span id="resultCount"></span></h2>
+                <div id="papersList" class="papers-list"></div>
+            </section>
+
+            <!-- Prompt Preview Modal -->
+            <div id="promptModal" class="modal hidden">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>生成されたプロンプト</h3>
+                        <button id="closeModal" class="btn-close">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="evidence-badge" id="evidenceBadge"></div>
+                        <textarea id="promptText" readonly></textarea>
+                    </div>
+                    <div class="modal-actions">
+                        <button id="copyBtn" class="btn-primary">
+                            <span class="btn-icon">📋</span>
+                            コピー
+                        </button>
+                        <button id="copyAndOpenBtn" class="btn-success">
+                            <span class="btn-icon">🚀</span>
+                            コピー＆Felo起動
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Toast Notification -->
+            <div id="toast" class="toast hidden"></div>
+        </main>
+
+        <footer class="footer">
+            <p>Semantic Scholar API使用 | GitHub Pages対応</p>
+        </footer>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
