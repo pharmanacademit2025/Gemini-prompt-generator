@@ -1,5 +1,5 @@
 /**
- * Felo Agent プロンプト生成ツール
+ * Gemini プロンプト生成ツール
  * Semantic Scholar API を使用して論文を検索し、
  * EBMに基づいたプロンプトを生成します
  */
@@ -303,13 +303,13 @@ copyBtn.addEventListener('click', async () => {
     }
 });
 
-// コピー＆Felo起動
+// コピー＆Gemini起動
 copyAndOpenBtn.addEventListener('click', async () => {
     const success = await copyToClipboard(promptText.value);
     if (success) {
-        showToast('コピーしました。Feloを開きます...');
+        showToast('コピーしました。Geminiを開きます...');
         setTimeout(() => {
-            window.open('https://felo.ai/', '_blank');
+            window.open('https://gemini.google.com/', '_blank');
             promptModal.classList.add('hidden');
         }, 800);
     } else {
@@ -323,3 +323,4 @@ document.addEventListener('keydown', (e) => {
         promptModal.classList.add('hidden');
     }
 });
+
