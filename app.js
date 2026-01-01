@@ -28,6 +28,96 @@ const toast = document.getElementById('toast');
 // ===== Translation Cache =====
 const translationCache = new Map();
 
+// ===== Medical Terminology Dictionary (Japanese → English) =====
+const MEDICAL_DICTIONARY = {
+    // 基礎医学
+    'オートファジー': 'autophagy',
+    '細胞死': 'cell death',
+    'アポトーシス': 'apoptosis',
+    '炎症': 'inflammation',
+    '免疫': 'immunity',
+    '抗体': 'antibody',
+    '抗原': 'antigen',
+    '遺伝子': 'gene',
+    'タンパク質': 'protein',
+    '酵素': 'enzyme',
+    'ホルモン': 'hormone',
+    '代謝': 'metabolism',
+    '酸化ストレス': 'oxidative stress',
+    '腸内細菌': 'gut microbiome',
+    'マイクロバイオーム': 'microbiome',
+
+    // 疾患名
+    '糖尿病': 'diabetes',
+    '高血圧': 'hypertension',
+    '心不全': 'heart failure',
+    '脳卒中': 'stroke',
+    '心筋梗塞': 'myocardial infarction',
+    'がん': 'cancer',
+    '癌': 'cancer',
+    '認知症': 'dementia',
+    'アルツハイマー': 'alzheimer',
+    'パーキンソン': 'parkinson',
+    'うつ病': 'depression',
+    '不安障害': 'anxiety disorder',
+    '双極性障害': 'bipolar disorder',
+    '統合失調症': 'schizophrenia',
+    '不眠症': 'insomnia',
+    '睡眠障害': 'sleep disorder',
+    '肥満': 'obesity',
+    '脂肪肝': 'fatty liver',
+    '腎臓病': 'kidney disease',
+    '肝臓病': 'liver disease',
+    '喘息': 'asthma',
+    'アレルギー': 'allergy',
+    '花粉症': 'allergic rhinitis',
+    'インフルエンザ': 'influenza',
+    '新型コロナ': 'COVID-19',
+    'コロナ': 'COVID-19',
+
+    // 症状
+    '疲労': 'fatigue',
+    '倦怠感': 'fatigue',
+    '頭痛': 'headache',
+    '腹痛': 'abdominal pain',
+    '吐き気': 'nausea',
+    'めまい': 'dizziness',
+    '動悸': 'palpitation',
+    '息切れ': 'shortness of breath',
+    '浮腫': 'edema',
+    'むくみ': 'edema',
+    '発熱': 'fever',
+    '咳': 'cough',
+
+    // 治療・薬
+    '抗生物質': 'antibiotics',
+    '抗うつ薬': 'antidepressant',
+    '睡眠薬': 'sleeping pill',
+    '鎮痛剤': 'analgesic',
+    'ワクチン': 'vaccine',
+    '副作用': 'side effect',
+    '薬物相互作用': 'drug interaction',
+
+    // 研究用語
+    'メタ解析': 'meta-analysis',
+    'メタアナリシス': 'meta-analysis',
+    'システマティックレビュー': 'systematic review',
+    'ランダム化比較試験': 'randomized controlled trial',
+    'コホート研究': 'cohort study',
+    '症例対照研究': 'case-control study',
+    'プラセボ': 'placebo',
+
+    // 生活習慣
+    '睡眠': 'sleep',
+    '運動': 'exercise',
+    '食事': 'diet',
+    '栄養': 'nutrition',
+    'ストレス': 'stress',
+    '禁煙': 'smoking cessation',
+    '断食': 'fasting',
+    '間欠的断食': 'intermittent fasting'
+};
+
 // ===== Evidence Level Configuration =====
 const EVIDENCE_LEVELS = {
     lv1: {
@@ -113,9 +203,28 @@ async function translateText(text, fromLang, toLang) {
 
 /**
  * 日本語→英語に翻訳（検索用）
+ * 医学用語辞書を優先的に使用
  */
 async function translateToEnglish(japaneseText) {
-    return await translateText(japaneseText, 'ja', 'en');
+    // 辞書に完全一致があればそれを使用
+    if (MEDICAL_DICTIONARY[japaneseText]) {
+        return MEDICAL_DICTIONARY[japaneseText];
+    }
+
+    // 辞書の用語を含む場合は置換
+    let translatedText = japaneseText;
+    for (const [ja, en] of Object.entries(MEDICAL_DICTIONARY)) {
+        if (translatedText.includes(ja)) {
+            translatedText = translatedText.replace(new RegExp(ja, 'g'), en);
+        }
+    }
+
+    // 日本語が残っている場合のみAPIで翻訳
+    if (isJapanese(translatedText)) {
+        return await translateText(translatedText, 'ja', 'en');
+    }
+
+    return translatedText;
 }
 
 /**
