@@ -1,11 +1,13 @@
 /**
- * Felo Agent プロンプト生成ツール
+ * Gemini プロンプト生成ツール
  * Semantic Scholar API を使用して論文を検索し、
  * EBMに基づいたプロンプトを生成します
+ * 日本語→英語翻訳、英語→日本語翻訳機能付き
  */
 
 // ===== State =====
 let currentPapers = [];
+let translatedPapers = []; // 翻訳済みデータを保持
 
 // ===== DOM Elements =====
 const searchInput = document.getElementById('searchInput');
@@ -23,9 +25,11 @@ const copyBtn = document.getElementById('copyBtn');
 const copyAndOpenBtn = document.getElementById('copyAndOpenBtn');
 const toast = document.getElementById('toast');
 
+// ===== Translation Cache =====
+const translationCache = new Map();
+
 // ===== Evidence Level Configuration =====
 const EVIDENCE_LEVELS = {
-    // レベル1: システマティックレビュー・メタアナリシス
     lv1: {
         lv: 'Lv.1',
         label: 'SR/メタアナリシス',
@@ -33,7 +37,6 @@ const EVIDENCE_LEVELS = {
         color: '#dc2626',
         keywords: ['systematic review', 'meta-analysis', 'meta analysis', 'cochrane', 'prisma']
     },
-    // レベル2: RCT
     lv2: {
         lv: 'Lv.2',
         label: 'RCT',
@@ -41,7 +44,6 @@ const EVIDENCE_LEVELS = {
         color: '#ea580c',
         keywords: ['randomized controlled trial', 'randomised controlled trial', 'rct', 'randomized trial', 'double-blind', 'placebo-controlled']
     },
-    // レベル3: 非ランダム化比較試験
     lv3: {
         lv: 'Lv.3',
         label: '非RCT比較試験',
@@ -49,7 +51,6 @@ const EVIDENCE_LEVELS = {
         color: '#d97706',
         keywords: ['controlled trial', 'comparative study', 'quasi-experimental', 'non-randomized']
     },
-    // レベル4: コホート・ケースコントロール
     lv4: {
         lv: 'Lv.4',
         label: 'コホート/症例対照',
@@ -57,7 +58,6 @@ const EVIDENCE_LEVELS = {
         color: '#65a30d',
         keywords: ['cohort', 'case-control', 'case control', 'prospective study', 'retrospective study', 'longitudinal', 'observational']
     },
-    // レベル5: 症例報告・症例集積
     lv5: {
         lv: 'Lv.5',
         label: '症例報告/症例集積',
@@ -65,7 +65,6 @@ const EVIDENCE_LEVELS = {
         color: '#0891b2',
         keywords: ['case report', 'case series', 'case study', 'clinical observation']
     },
-    // レベル6: 専門家意見・基礎研究
     lv6: {
         lv: 'Lv.6',
         label: '基礎研究/総説',
@@ -75,21 +74,67 @@ const EVIDENCE_LEVELS = {
     }
 };
 
-// ===== Functions =====
+// ===== Translation Functions =====
 
 /**
- * 論文情報からエビデンスレベルを判定
+ * 日本語かどうかを判定
  */
+function isJapanese(text) {
+    return /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]/.test(text);
+}
+
+/**
+ * MyMemory API を使用して翻訳
+ */
+async function translateText(text, fromLang, toLang) {
+    if (!text || text.trim() === '') return text;
+
+    const cacheKey = `${text}_${fromLang}_${toLang}`;
+    if (translationCache.has(cacheKey)) {
+        return translationCache.get(cacheKey);
+    }
+
+    try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text.substring(0, 500))}&langpair=${fromLang}|${toLang}`;
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.responseStatus === 200 && data.responseData.translatedText) {
+            const translated = data.responseData.translatedText;
+            translationCache.set(cacheKey, translated);
+            return translated;
+        }
+        return text;
+    } catch (error) {
+        console.error('Translation error:', error);
+        return text;
+    }
+}
+
+/**
+ * 日本語→英語に翻訳（検索用）
+ */
+async function translateToEnglish(japaneseText) {
+    return await translateText(japaneseText, 'ja', 'en');
+}
+
+/**
+ * 英語→日本語に翻訳（表示用）
+ */
+async function translateToJapanese(englishText) {
+    return await translateText(englishText, 'en', 'ja');
+}
+
+// ===== Functions =====
+
 function getEvidenceLevel(paper) {
     const title = (paper.title || '').toLowerCase();
     const abstract = (paper.abstract || '').toLowerCase();
     const venue = (paper.venue || '').toLowerCase();
     const publicationType = (paper.publicationTypes || []).map(t => t.toLowerCase());
 
-    // 結合したテキストで検索
     const searchText = `${title} ${abstract} ${venue} ${publicationType.join(' ')}`;
 
-    // 高いレベルから順にチェック
     for (const [key, config] of Object.entries(EVIDENCE_LEVELS)) {
         for (const keyword of config.keywords) {
             if (searchText.includes(keyword)) {
@@ -98,13 +143,9 @@ function getEvidenceLevel(paper) {
         }
     }
 
-    // デフォルトはレベル6
     return { ...EVIDENCE_LEVELS.lv6, key: 'lv6' };
 }
 
-/**
- * Semantic Scholar API で論文を検索
- */
 async function searchPapers(query, limit = 10) {
     const baseUrl = 'https://api.semanticscholar.org/graph/v1/paper/search';
     const fields = 'title,abstract,year,authors,venue,externalIds,publicationTypes,citationCount';
@@ -127,9 +168,9 @@ async function searchPapers(query, limit = 10) {
 }
 
 /**
- * 論文カードのHTMLを生成
+ * 論文カードのHTMLを生成（翻訳済みデータを使用）
  */
-function createPaperCard(paper, index) {
+function createPaperCard(paper, translatedPaper, index) {
     const info = getEvidenceLevel(paper);
     const pmid = paper.externalIds?.PubMed || null;
     const doi = paper.externalIds?.DOI || null;
@@ -137,10 +178,14 @@ function createPaperCard(paper, index) {
     const authors = paper.authors?.slice(0, 3).map(a => a.name).join(', ') || '著者不明';
     const citations = paper.citationCount || 0;
 
+    // 翻訳済みのタイトルと抄録を使用
+    const displayTitle = translatedPaper.titleJa || paper.title;
+    const displayAbstract = translatedPaper.abstractJa || paper.abstract || '抄録なし';
+
     return `
         <div class="paper-card" data-index="${index}">
             <div class="paper-header">
-                <h3 class="paper-title">${paper.title}</h3>
+                <h3 class="paper-title">${displayTitle}</h3>
                 <span class="evidence-tag ${info.key}">${info.lv} ${info.label}</span>
             </div>
             <div class="paper-meta">
@@ -149,7 +194,12 @@ function createPaperCard(paper, index) {
                 <span>📊 被引用: ${citations}</span>
                 ${pmid ? `<span>PMID: ${pmid}</span>` : ''}
             </div>
-            <p class="paper-abstract">${paper.abstract || '抄録なし'}</p>
+            <p class="paper-abstract">${displayAbstract}</p>
+            <details class="original-text">
+                <summary>📄 原文（英語）</summary>
+                <p><strong>Title:</strong> ${paper.title}</p>
+                <p><strong>Abstract:</strong> ${paper.abstract || 'N/A'}</p>
+            </details>
             <div class="paper-actions">
                 <button class="btn-primary" onclick="openPrompt(${index})">
                     <span class="btn-icon">✨</span>
@@ -165,10 +215,10 @@ function createPaperCard(paper, index) {
 }
 
 /**
- * 検索を実行
+ * 検索を実行（翻訳機能付き）
  */
 async function performSearch() {
-    const query = searchInput.value.trim();
+    let query = searchInput.value.trim();
     if (!query) {
         showToast('検索キーワードを入力してください');
         return;
@@ -182,16 +232,34 @@ async function performSearch() {
     searchBtn.disabled = true;
 
     try {
-        currentPapers = await searchPapers(query, limit);
+        // 日本語の場合は英語に翻訳
+        let searchQuery = query;
+        if (isJapanese(query)) {
+            showToast('日本語→英語に翻訳中...');
+            searchQuery = await translateToEnglish(query);
+            console.log(`Translated query: ${query} → ${searchQuery}`);
+        }
+
+        currentPapers = await searchPapers(searchQuery, limit);
 
         if (currentPapers.length === 0) {
             papersList.innerHTML = '<p style="text-align:center;color:var(--text-muted);">該当する論文が見つかりませんでした</p>';
+            translatedPapers = [];
         } else {
-            papersList.innerHTML = currentPapers.map((p, i) => createPaperCard(p, i)).join('');
+            // 論文タイトルと抄録を日本語に翻訳
+            showToast('検索結果を日本語に翻訳中...');
+            translatedPapers = await Promise.all(currentPapers.map(async (paper) => {
+                const titleJa = await translateToJapanese(paper.title || '');
+                const abstractJa = paper.abstract ? await translateToJapanese(paper.abstract.substring(0, 500)) : '';
+                return { titleJa, abstractJa };
+            }));
+
+            papersList.innerHTML = currentPapers.map((p, i) => createPaperCard(p, translatedPapers[i], i)).join('');
         }
 
         resultCount.textContent = `(${currentPapers.length}件)`;
         resultsSection.classList.remove('hidden');
+        showToast(`${currentPapers.length}件の論文が見つかりました`);
 
     } catch (error) {
         showToast('検索中にエラーが発生しました: ' + error.message);
@@ -201,16 +269,12 @@ async function performSearch() {
     }
 }
 
-/**
- * プロンプトを生成してモーダルを開く
- */
 function openPrompt(index) {
     const p = currentPapers[index];
     const info = getEvidenceLevel(p);
     const pmid = p.externalIds?.PubMed || 'なし';
     const doi = p.externalIds?.DOI || 'なし';
 
-    // Felo Agent用プロンプト
     const dataForAgent = `
 【医学・薬学ライティングAI v2.0：解析開始指示】
 以下の主軸エビデンスに基づき、設定済みのワークフロー（Step 3以降）に従って執筆を開始してください。
@@ -226,25 +290,19 @@ function openPrompt(index) {
 網羅性よりも、本論文の「${p.title}」における詳細なメカニズムと、日本国内の臨床状況への応用（薬剤師視点）を深く掘り下げてください。
 `.trim();
 
-    // モーダル更新
     evidenceBadge.textContent = `${info.lv} ${info.label}`;
     evidenceBadge.style.background = info.color;
     evidenceBadge.style.color = 'white';
     promptText.value = dataForAgent;
 
-    // モーダル表示
     promptModal.classList.remove('hidden');
 }
 
-/**
- * クリップボードにコピー
- */
 async function copyToClipboard(text) {
     try {
         await navigator.clipboard.writeText(text);
         return true;
     } catch (err) {
-        // フォールバック
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -257,9 +315,6 @@ async function copyToClipboard(text) {
     }
 }
 
-/**
- * トースト通知を表示
- */
 function showToast(message) {
     toast.textContent = message;
     toast.classList.remove('hidden');
@@ -271,29 +326,24 @@ function showToast(message) {
 
 // ===== Event Listeners =====
 
-// 検索ボタン
 searchBtn.addEventListener('click', performSearch);
 
-// Enterキーで検索
 searchInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         performSearch();
     }
 });
 
-// モーダルを閉じる
 closeModal.addEventListener('click', () => {
     promptModal.classList.add('hidden');
 });
 
-// モーダル外クリックで閉じる
 promptModal.addEventListener('click', (e) => {
     if (e.target === promptModal) {
         promptModal.classList.add('hidden');
     }
 });
 
-// コピーボタン
 copyBtn.addEventListener('click', async () => {
     const success = await copyToClipboard(promptText.value);
     if (success) {
@@ -303,13 +353,12 @@ copyBtn.addEventListener('click', async () => {
     }
 });
 
-// コピー＆Felo起動
 copyAndOpenBtn.addEventListener('click', async () => {
     const success = await copyToClipboard(promptText.value);
     if (success) {
-        showToast('コピーしました。Feloを開きます...');
+        showToast('コピーしました。Geminiを開きます...');
         setTimeout(() => {
-            window.open('https://felo.ai/', '_blank');
+            window.open('https://gemini.google.com/', '_blank');
             promptModal.classList.add('hidden');
         }, 800);
     } else {
@@ -317,7 +366,6 @@ copyAndOpenBtn.addEventListener('click', async () => {
     }
 });
 
-// ESCキーでモーダルを閉じる
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !promptModal.classList.contains('hidden')) {
         promptModal.classList.add('hidden');
